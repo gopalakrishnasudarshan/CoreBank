@@ -12,6 +12,9 @@ public class User {
     private Role role;
     private LocalDateTime createdAt;
 
+
+
+
     public User(long userId, String userName, String password, Role role, LocalDateTime createdAt) {
         this.userId = userId;
         this.userName = userName;
