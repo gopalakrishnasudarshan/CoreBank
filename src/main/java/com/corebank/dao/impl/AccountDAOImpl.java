@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.math.BigDecimal;
 import java.sql.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,7 +29,7 @@ public class AccountDAOImpl implements AccountDAO {
         String accountTypeStr = resultSet.getString("account_type");
         BigDecimal balance = resultSet.getBigDecimal("balance");
         String statusStr = resultSet.getString("status");
-        Timestamp ts = resultSet.getTimestamp("ts");
+        Timestamp ts = resultSet.getTimestamp("created_at");
         LocalDateTime createdAt = (ts != null) ? ts.toLocalDateTime() : null;
 
         Customer customer = customerDAO.getCustomerById(customerId)
@@ -64,8 +65,7 @@ public class AccountDAOImpl implements AccountDAO {
                         throw new SQLException("Creating account failed");
                     }
                 }
-            }
-            else {
+            } else {
                 throw new SQLException("Creating account failed");
             }
 
@@ -78,28 +78,23 @@ public class AccountDAOImpl implements AccountDAO {
         String sql = "INSERT INTO accounts (customer_id, account_type, balance, status, created_at) VALUES (?,?,?,?,?)";
         try (PreparedStatement preparedStatement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
-            preparedStatement.setLong(1,account.getCustomer().getCustomerId());
-            preparedStatement.setString(2,account.getAccountType().name());
+            preparedStatement.setLong(1, account.getCustomer().getCustomerId());
+            preparedStatement.setString(2, account.getAccountType().name());
             preparedStatement.setBigDecimal(3, account.getBalance());
             preparedStatement.setString(4, account.getStatus().name());
-            preparedStatement.setTimestamp(5,Timestamp.valueOf(account.getCreatedAt()));
+            preparedStatement.setTimestamp(5, Timestamp.valueOf(account.getCreatedAt()));
 
             int rowsAffected = preparedStatement.executeUpdate();
 
-            if(rowsAffected > 0)
-            {
-                try(ResultSet resultSet = preparedStatement.getGeneratedKeys())
-                {
-                    if(resultSet.next())
-                    {
+            if (rowsAffected > 0) {
+                try (ResultSet resultSet = preparedStatement.getGeneratedKeys()) {
+                    if (resultSet.next()) {
                         account.setAccountId(resultSet.getLong(1));
-                    }
-                    else {
+                    } else {
                         throw new SQLException("Creating account failed");
                     }
                 }
-            }
-            else {
+            } else {
                 throw new SQLException("Creating the account failed");
             }
 
@@ -109,41 +104,180 @@ public class AccountDAOImpl implements AccountDAO {
 
     @Override
     public Optional<Account> getAccountById(long accountId) throws SQLException {
+
+        String sql = "SELECT account_id, customer_id, account_type, balance, status, created_at FROM accounts where account_id =?";
+
+        try (Connection connection = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+
+            preparedStatement.setLong(1, accountId);
+
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    Account account = mapRowToAccount(resultSet);
+                    return Optional.of(account);
+
+                }
+
+
+            }
+        }
         return Optional.empty();
     }
 
     @Override
     public Optional<Account> getAccountById(long accountId, Connection connection) throws SQLException {
+        String sql = "SELECT account_id, customer_id, account_type, balance, status, created_at FROM accounts where account_id =?";
+
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql);) {
+            preparedStatement.setLong(1, accountId);
+
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    Account account = mapRowToAccount(resultSet);
+
+                    return Optional.of(account);
+                }
+            }
+        }
+
         return Optional.empty();
     }
 
     @Override
     public List<Account> getAccountsByCustomerId(long customerId) throws SQLException {
-        return List.of();
+
+        String sql = "SELECT account_id, customer_id, account_type, balance, status, created_at FROM accounts where customer_id=? ";
+
+        List<Account> accounts = new ArrayList<>();
+        try (Connection connection = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+
+            preparedStatement.setLong(1, customerId);
+
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                while (resultSet.next()) {
+                    Account account = mapRowToAccount(resultSet);
+                    accounts.add(account);
+
+                }
+
+            }
+
+        }
+        return accounts;
     }
 
     @Override
     public List<Account> getAccountsByCustomerId(long customerId, Connection connection) throws SQLException {
-        return List.of();
+        String sql = "SELECT account_id, customer_id, account_type, balance, status, created_at FROM accounts where customer_id=? ";
+
+        List<Account> accounts = new ArrayList<>();
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+
+            preparedStatement.setLong(1, customerId);
+
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                while (resultSet.next()) {
+                    Account account = mapRowToAccount(resultSet);
+                    accounts.add(account);
+
+                }
+
+            }
+
+        }
+        return accounts;
+
     }
 
     @Override
     public void updateBalance(long accountId, double newBalance) throws SQLException {
+
+        String sql = "UPDATE accounts SET balance = ? WHERE account_id = ?";
+        try(Connection connection =DBConnectionManager.getInstance().getConnection();
+        PreparedStatement preparedStatement = connection.prepareStatement(sql))
+        {
+            preparedStatement.setBigDecimal(1,BigDecimal.valueOf(newBalance));
+            preparedStatement.setLong(2,accountId);
+
+            int rowsAffected = preparedStatement.executeUpdate();
+
+            if(rowsAffected > 0){
+
+                logger.info("Updated account balance succesfully");
+            }
+            else {
+                logger.warn("No account found with account_id: {}", accountId);
+            }
+        }
 
     }
 
     @Override
     public void updateBalance(long accountId, double newBalance, Connection connection) throws SQLException {
 
+        String sql = "UPDATE accounts SET balance = ? WHERE account_id = ?";
+        try(PreparedStatement preparedStatement = connection.prepareStatement(sql))
+        {
+            preparedStatement.setBigDecimal(1,BigDecimal.valueOf(newBalance));
+            preparedStatement.setLong(2,accountId);
+
+            int rowsAffected = preparedStatement.executeUpdate();
+
+            if(rowsAffected > 0){
+
+                logger.info("Updated account balance succesfully");
+            }
+            else {
+                logger.warn("No account found with account_id: {}", accountId);
+            }
+        }
+
     }
 
     @Override
     public void deleteAccount(long accountId) throws SQLException {
 
+        String sql = "DELETE FROM accounts WHERE account_id =?";
+
+        try(Connection connection = DBConnectionManager.getInstance().getConnection();
+        PreparedStatement preparedStatement = connection.prepareStatement(sql)){
+
+            preparedStatement.setLong(1,accountId);
+            int rowsAffected = preparedStatement.executeUpdate();
+
+            if(rowsAffected > 0){
+
+                logger.info("Account with account id : {} deleted succesfully", accountId);
+            }
+            else {
+                logger.warn("No account found with account_id: {}", accountId);
+            }
+
+        }
+
     }
 
     @Override
     public void deleteAccount(long accountId, Connection connection) throws SQLException {
+
+        String sql = "DELETE FROM accounts WHERE account_id =?";
+
+        try(PreparedStatement preparedStatement = connection.prepareStatement(sql)){
+
+            preparedStatement.setLong(1,accountId);
+            int rowsAffected = preparedStatement.executeUpdate();
+
+            if(rowsAffected > 0){
+
+                logger.info("Account with account id : {} deleted succesfully", accountId);
+            }
+            else {
+                logger.warn("No account found with account_id: {}", accountId);
+            }
+
+        }
 
     }
 }
