@@ -155,93 +155,166 @@ public class LoanDAOImpl implements LoanDAO {
         return loans;
     }
 
+
     @Override
     public List<Loan> getAllLoans() throws SQLException {
-        return List.of();
+        try (Connection connection = DBConnectionManager.getInstance().getConnection()) {
+            return getAllLoans(connection);
+        }
     }
 
     @Override
     public List<Loan> getAllLoans(Connection connection) throws SQLException {
-        return List.of();
+        String sql = "SELECT * FROM loans";
+        List<Loan> loans = new ArrayList<>();
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql);
+             ResultSet resultSet = preparedStatement.executeQuery()) {
+            while (resultSet.next()) {
+                loans.add(mapRowToLoan(resultSet));
+            }
+        }
+        return loans;
     }
 
     @Override
     public List<Loan> getLoansByStatus(Loan.Status status) throws SQLException {
-        return List.of();
+        try (Connection connection = DBConnectionManager.getInstance().getConnection()) {
+            return getLoansByStatus(status, connection);
+        }
     }
 
     @Override
     public List<Loan> getLoansByStatus(Loan.Status status, Connection connection) throws SQLException {
-        return List.of();
+        String sql = "SELECT * FROM loans WHERE status = ?";
+        List<Loan> loans = new ArrayList<>();
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+            preparedStatement.setString(1, status.name());
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                while (resultSet.next()) {
+                    loans.add(mapRowToLoan(resultSet));
+                }
+            }
+        }
+        return loans;
     }
 
     @Override
     public void updateLoan(Loan loan) throws SQLException {
-
+        try (Connection connection = DBConnectionManager.getInstance().getConnection()) {
+            updateLoan(loan, connection);
+        }
     }
 
     @Override
     public void updateLoan(Loan loan, Connection connection) throws SQLException {
+        String sql = "UPDATE loans SET customer_id = ?, amount = ?, interest_rate = ?, start_date = ?, end_date = ?, status = ? " +
+                "WHERE loan_id = ?";
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+            preparedStatement.setLong(1, loan.getCustomer().getCustomerId());
+            preparedStatement.setBigDecimal(2, loan.getAmount());
+            preparedStatement.setBigDecimal(3, loan.getInterestRate());
+            preparedStatement.setDate(4, java.sql.Date.valueOf(loan.getStartDate()));
+            preparedStatement.setDate(5, java.sql.Date.valueOf(loan.getEndDate()));
+            preparedStatement.setString(6, loan.getStatus().name());
+            preparedStatement.setLong(7, loan.getLoanId());
 
+            int rows = preparedStatement.executeUpdate();
+            if (rows == 0) {
+                throw new SQLException("Updating loan failed, no rows affected.");
+            }
+        }
     }
+
+    // Approve loan
 
     @Override
     public void approveLoan(long loanId) throws SQLException {
-
+        Optional<Loan> optionalLoan = getLoanById(loanId);
+        if (optionalLoan.isPresent()) {
+            approveLoan(optionalLoan.get()); // you already throw SQLException here
+        }
     }
-
     @Override
     public void approveLoan(Loan loan) throws SQLException {
-
+        try (Connection connection = DBConnectionManager.getInstance().getConnection()) {
+            approveLoan(loan, connection);
+        }
     }
 
     @Override
     public void approveLoan(long loanId, Connection connection) throws SQLException {
-
+        getLoanById(loanId, connection).ifPresent(loan -> {
+            try {
+                approveLoan(loan, connection);
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     @Override
     public void approveLoan(Loan loan, Connection connection) throws SQLException {
-
+        loan.setStatus(Loan.Status.APPROVED);
+        updateLoan(loan, connection);
     }
 
+    // Reject loan
     @Override
     public void rejectLoan(long loanId) throws SQLException {
-
+        Optional<Loan> optionalLoan = getLoanById(loanId);
+        if (optionalLoan.isPresent()) {
+            rejectLoan(optionalLoan.get());
+        }
     }
 
     @Override
     public void rejectLoan(Loan loan) throws SQLException {
-
+        try (Connection connection = DBConnectionManager.getInstance().getConnection()) {
+            rejectLoan(loan, connection);
+        }
     }
 
     @Override
     public void rejectLoan(long loanId, Connection connection) throws SQLException {
-
+        getLoanById(loanId, connection).ifPresent(loan -> {
+            try {
+                rejectLoan(loan, connection);
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
 
     @Override
     public void rejectLoan(Loan loan, Connection connection) throws SQLException {
-
+        loan.setStatus(Loan.Status.REJECTED);
+        updateLoan(loan, connection);
     }
 
+    // Delete loan
     @Override
     public void deleteLoan(long loanId) throws SQLException {
-
+        try (Connection connection = DBConnectionManager.getInstance().getConnection()) {
+            deleteLoan(loanId, connection);
+        }
     }
 
     @Override
     public void deleteLoan(Loan loan) throws SQLException {
-
+        deleteLoan(loan.getLoanId());
     }
 
     @Override
     public void deleteLoan(long loanId, Connection connection) throws SQLException {
-
+        String sql = "DELETE FROM loans WHERE loan_id = ?";
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+            preparedStatement.setLong(1, loanId);
+            preparedStatement.executeUpdate();
+        }
     }
 
     @Override
     public void deleteLoan(Loan loan, Connection connection) throws SQLException {
-
+        deleteLoan(loan.getLoanId(), connection);
     }
 }
