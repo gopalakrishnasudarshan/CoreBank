@@ -2,6 +2,7 @@ package com.corebank.dao;
 
 import com.corebank.model.Account;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
@@ -20,8 +21,8 @@ public interface AccountDAO {
     List<Account> getAccountsByCustomerId(long customerId, Connection connection) throws SQLException;
 
 
-    void updateBalance(long accountId, double newBalance) throws SQLException;
-    void updateBalance(long accountId, double newBalance, Connection connection) throws SQLException;
+    void updateBalance(long accountId, BigDecimal newBalance) throws SQLException;
+    void updateBalance(long accountId, BigDecimal newBalance, Connection connection) throws SQLException;
 
 
     void deleteAccount(long accountId) throws SQLException;

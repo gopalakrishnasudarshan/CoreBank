@@ -3,6 +3,7 @@ package com.corebank.dao.impl;
 import com.corebank.dao.AccountDAO;
 import com.corebank.dao.CustomerDAO;
 import com.corebank.db.DBConnectionManager;
+import com.corebank.exception.DataAccessException;
 import com.corebank.model.Account;
 import com.corebank.model.Customer;
 import org.slf4j.Logger;
@@ -22,24 +23,31 @@ public class AccountDAOImpl implements AccountDAO {
     Logger logger = LoggerFactory.getLogger(AccountDAOImpl.class);
 
     //helper function , because in the Account model we have A customer Object.
-    private Account mapRowToAccount(ResultSet resultSet) throws SQLException {
+    private Account mapRowToAccount(ResultSet resultSet) {
+        try {
+            long accountId = resultSet.getLong("account_id");
+            long customerId = resultSet.getLong("customer_id");
+            String accountTypeStr = resultSet.getString("account_type");
+            BigDecimal balance = resultSet.getBigDecimal("balance");
+            String statusStr = resultSet.getString("status");
+            Timestamp ts = resultSet.getTimestamp("created_at");
+            LocalDateTime createdAt = (ts != null) ? ts.toLocalDateTime() : null;
 
-        long accountId = resultSet.getLong("account_id");
-        long customerId = resultSet.getLong("customer_id");
-        String accountTypeStr = resultSet.getString("account_type");
-        BigDecimal balance = resultSet.getBigDecimal("balance");
-        String statusStr = resultSet.getString("status");
-        Timestamp ts = resultSet.getTimestamp("created_at");
-        LocalDateTime createdAt = (ts != null) ? ts.toLocalDateTime() : null;
+            Customer customer = customerDAO.getCustomerById(customerId)
+                    .orElseThrow(() -> new DataAccessException("Customer not found for id: " + customerId));
 
-        Customer customer = customerDAO.getCustomerById(customerId)
-                .orElseThrow(() -> new RuntimeException("Customer not found for id:" + customerId));
+            Account.AccountType accountType = Account.AccountType.valueOf(accountTypeStr.trim().toUpperCase());
+            Account.Status status = Account.Status.valueOf(statusStr.trim().toUpperCase());
 
-        Account.AccountType accountType = Account.AccountType.valueOf(accountTypeStr);
-        Account.Status status = Account.Status.valueOf(statusStr);
+            return new Account(accountId, customer, accountType, balance, status, createdAt);
 
-        return new Account(accountId, customer, accountType, balance, status, createdAt);
+        } catch (SQLException e) {
+            throw new DataAccessException("Error mapping account from ResultSet", e);
+        } catch (IllegalArgumentException e) {
+            throw new DataAccessException("Invalid enum value in account table", e);
+        }
     }
+
 
 
     @Override
@@ -103,9 +111,12 @@ public class AccountDAOImpl implements AccountDAO {
     }
 
     @Override
-    public Optional<Account> getAccountById(long accountId) throws SQLException {
+    public Optional<Account> getAccountById(long accountId) {
+        if (accountId <= 0) {
+            return Optional.empty();
+        }
 
-        String sql = "SELECT account_id, customer_id, account_type, balance, status, created_at FROM accounts where account_id =?";
+        String sql = "SELECT account_id, customer_id, account_type, balance, status, created_at FROM accounts WHERE account_id = ?";
 
         try (Connection connection = DBConnectionManager.getInstance().getConnection();
              PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
@@ -116,14 +127,16 @@ public class AccountDAOImpl implements AccountDAO {
                 if (resultSet.next()) {
                     Account account = mapRowToAccount(resultSet);
                     return Optional.of(account);
-
                 }
-
-
             }
+
+        } catch (SQLException e) {
+            throw new DataAccessException("Error fetching account with accountId " + accountId, e);
         }
+
         return Optional.empty();
     }
+
 
     @Override
     public Optional<Account> getAccountById(long accountId, Connection connection) throws SQLException {
@@ -169,115 +182,119 @@ public class AccountDAOImpl implements AccountDAO {
     }
 
     @Override
-    public List<Account> getAccountsByCustomerId(long customerId, Connection connection) throws SQLException {
-        String sql = "SELECT account_id, customer_id, account_type, balance, status, created_at FROM accounts where customer_id=? ";
-
+    public List<Account> getAccountsByCustomerId(long customerId, Connection connection) {
+        String sql = "SELECT account_id, customer_id, account_type, balance, status, created_at FROM accounts WHERE customer_id = ?";
         List<Account> accounts = new ArrayList<>();
-        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
 
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
             preparedStatement.setLong(1, customerId);
 
             try (ResultSet resultSet = preparedStatement.executeQuery()) {
                 while (resultSet.next()) {
                     Account account = mapRowToAccount(resultSet);
                     accounts.add(account);
-
                 }
-
             }
 
+        } catch (SQLException e) {
+            throw new DataAccessException("Error fetching accounts for customer_id " + customerId, e);
         }
+
         return accounts;
-
     }
 
-    @Override
-    public void updateBalance(long accountId, double newBalance) throws SQLException {
 
+    @Override
+    public void updateBalance(long accountId, BigDecimal newBalance) {
         String sql = "UPDATE accounts SET balance = ? WHERE account_id = ?";
-        try(Connection connection =DBConnectionManager.getInstance().getConnection();
-        PreparedStatement preparedStatement = connection.prepareStatement(sql))
-        {
-            preparedStatement.setBigDecimal(1,BigDecimal.valueOf(newBalance));
-            preparedStatement.setLong(2,accountId);
+        try (Connection connection = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+
+            preparedStatement.setBigDecimal(1, newBalance);
+            preparedStatement.setLong(2, accountId);
 
             int rowsAffected = preparedStatement.executeUpdate();
-
-            if(rowsAffected > 0){
-
-                logger.info("Updated account balance succesfully");
+            if (rowsAffected > 0) {
+                logger.info("Updated balance successfully for account_id {}", accountId);
+            } else {
+                logger.warn("No account found with account_id {}", accountId);
             }
-            else {
-                logger.warn("No account found with account_id: {}", accountId);
-            }
+
+        } catch (SQLException e) {
+            throw new DataAccessException("Error updating balance for account_id " + accountId, e);
         }
-
     }
 
     @Override
-    public void updateBalance(long accountId, double newBalance, Connection connection) throws SQLException {
-
+    public void updateBalance(long accountId, BigDecimal newBalance, Connection connection) {
         String sql = "UPDATE accounts SET balance = ? WHERE account_id = ?";
-        try(PreparedStatement preparedStatement = connection.prepareStatement(sql))
-        {
-            preparedStatement.setBigDecimal(1,BigDecimal.valueOf(newBalance));
-            preparedStatement.setLong(2,accountId);
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+
+            preparedStatement.setBigDecimal(1, newBalance);
+            preparedStatement.setLong(2, accountId);
 
             int rowsAffected = preparedStatement.executeUpdate();
-
-            if(rowsAffected > 0){
-
-                logger.info("Updated account balance succesfully");
+            if (rowsAffected > 0) {
+                logger.info("Updated balance successfully for account_id {}", accountId);
+            } else {
+                logger.warn("No account found with account_id {}", accountId);
             }
-            else {
-                logger.warn("No account found with account_id: {}", accountId);
-            }
+
+        } catch (SQLException e) {
+            throw new DataAccessException("Error updating balance for account_id " + accountId, e);
+        }
+    }
+
+
+    @Override
+    public void deleteAccount(long accountId) {
+        if (accountId <= 0) {
+            logger.warn("Invalid account id: {}", accountId);
+            return;
         }
 
+        String sql = "DELETE FROM accounts WHERE account_id = ?";
+
+        try (Connection connection = DBConnectionManager.getInstance().getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+
+            preparedStatement.setLong(1, accountId);
+            int rowsAffected = preparedStatement.executeUpdate();
+
+            if (rowsAffected > 0) {
+                logger.info("Account with account_id {} deleted successfully", accountId);
+            } else {
+                logger.warn("No account found with account_id: {}", accountId);
+            }
+
+        } catch (SQLException e) {
+            throw new DataAccessException("Error deleting account with account_id " + accountId, e);
+        }
     }
 
     @Override
-    public void deleteAccount(long accountId) throws SQLException {
+    public void deleteAccount(long accountId, Connection connection) {
+        if (accountId <= 0) {
+            logger.warn("Invalid account id: {}", accountId);
+            return;
+        }
 
-        String sql = "DELETE FROM accounts WHERE account_id =?";
+        String sql = "DELETE FROM accounts WHERE account_id = ?";
 
-        try(Connection connection = DBConnectionManager.getInstance().getConnection();
-        PreparedStatement preparedStatement = connection.prepareStatement(sql)){
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
 
-            preparedStatement.setLong(1,accountId);
+            preparedStatement.setLong(1, accountId);
             int rowsAffected = preparedStatement.executeUpdate();
 
-            if(rowsAffected > 0){
-
-                logger.info("Account with account id : {} deleted succesfully", accountId);
-            }
-            else {
+            if (rowsAffected > 0) {
+                logger.info("Account with account_id {} deleted successfully", accountId);
+            } else {
                 logger.warn("No account found with account_id: {}", accountId);
             }
 
+        } catch (SQLException e) {
+            throw new DataAccessException("Error deleting account with account_id " + accountId, e);
         }
-
     }
 
-    @Override
-    public void deleteAccount(long accountId, Connection connection) throws SQLException {
-
-        String sql = "DELETE FROM accounts WHERE account_id =?";
-
-        try(PreparedStatement preparedStatement = connection.prepareStatement(sql)){
-
-            preparedStatement.setLong(1,accountId);
-            int rowsAffected = preparedStatement.executeUpdate();
-
-            if(rowsAffected > 0){
-
-                logger.info("Account with account id : {} deleted succesfully", accountId);
-            }
-            else {
-                logger.warn("No account found with account_id: {}", accountId);
-            }
-
-        }
-
-    }
 }

@@ -2,6 +2,7 @@ package com.corebank.dao.impl;
 
 import com.corebank.dao.CustomerDAO;
 import com.corebank.db.DBConnectionManager;
+import com.corebank.exception.DataAccessException;
 import com.corebank.model.Customer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,52 +31,56 @@ public class CustomerDAOImpl implements CustomerDAO {
             preparedStatement.setString(2, customer.getLastName());
 
             LocalDate birthDate = customer.getBirthDate();
-
             if (birthDate != null) {
                 preparedStatement.setDate(3, java.sql.Date.valueOf(birthDate));
             } else {
                 preparedStatement.setNull(3, java.sql.Types.DATE);
             }
+
             preparedStatement.setString(4, customer.getEmail());
             preparedStatement.setString(5, customer.getPhone());
             preparedStatement.setString(6, customer.getAddress());
 
             int rowsAffected = preparedStatement.executeUpdate();
 
-            if (rowsAffected > 0) {
-                try (ResultSet resultSet = preparedStatement.getGeneratedKeys()) {
-                    if (resultSet.next()) {
-                        customer.setCustomerId(resultSet.getLong(1));
-                    }
-                }
-
+            if (rowsAffected == 0) {
+                throw new DataAccessException("Failed to insert customer, no rows affected");
             }
-            logger.info("Customer registered Successfully");
 
+
+            try (ResultSet resultSet = preparedStatement.getGeneratedKeys()) {
+                if (resultSet.next()) {
+                    customer.setCustomerId(resultSet.getLong(1));
+                }
+            }
+
+            logger.info("Customer registered successfully");
+            return customer;
 
         } catch (SQLException e) {
-            logger.error("Error registering the Customer", e);
-            return null;
+            throw new DataAccessException("Error registering the customer", e);
         }
-        return customer;
     }
+
 
     @Override
     public Optional<Customer> getCustomerById(long id) {
 
-        String sql = "SELECT customer_id, first_name,last_name,dob,email,phone,address,created_at FROM customers " +
-                "WHERE customer_id = ?";
         if (id <= 0) {
             return Optional.empty();
         }
 
+        String sql = "SELECT customer_id, first_name, last_name, dob, email, phone, address, created_at FROM customers " +
+                "WHERE customer_id = ?";
+
         try (Connection connection = DBConnectionManager.getInstance().getConnection();
              PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+
             preparedStatement.setLong(1, id);
 
             try (ResultSet resultSet = preparedStatement.executeQuery()) {
                 if (resultSet.next()) {
-                    long customer_id = resultSet.getLong("customer_id");
+                    long customerId = resultSet.getLong("customer_id");
                     String firstName = resultSet.getString("first_name");
                     String lastName = resultSet.getString("last_name");
 
@@ -89,18 +94,19 @@ public class CustomerDAOImpl implements CustomerDAO {
                     Timestamp ts = resultSet.getTimestamp("created_at");
                     LocalDateTime createdAt = (ts != null) ? ts.toLocalDateTime() : null;
 
-                    Customer customer = new Customer(customer_id, firstName, lastName, dob, email, phone, address, createdAt);
+                    Customer customer = new Customer(customerId, firstName, lastName, dob, email, phone, address, createdAt);
                     return Optional.of(customer);
-
+                } else {
+                    return Optional.empty();
                 }
-
             }
 
         } catch (SQLException e) {
-            logger.error("Cannot find the customer with customer_id {}", id, e);
+            logger.error("Error fetching customer with id {}", id, e);
+            throw new DataAccessException("Error fetching customer with id: " + id, e);
         }
-        return Optional.empty();
     }
+
 
     @Override
     public List<Customer> getAllCustomers() {
@@ -144,11 +150,9 @@ public class CustomerDAOImpl implements CustomerDAO {
 
     @Override
     public void updateCustomer(Customer customer) {
-
-        String sql = "UPDATE customers\n" +
-                "SET first_name = ?, last_name = ?, dob = ?, email = ?, phone = ?, address = ?\n" +
-                "WHERE customer_id = ?\n";
-
+        String sql = "UPDATE customers " +
+                "SET first_name = ?, last_name = ?, dob = ?, email = ?, phone = ?, address = ? " +
+                "WHERE customer_id = ?";
 
         try (Connection connection = DBConnectionManager.getInstance().getConnection();
              PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
@@ -168,27 +172,27 @@ public class CustomerDAOImpl implements CustomerDAO {
             preparedStatement.setString(6, customer.getAddress());
             preparedStatement.setLong(7, customer.getCustomerId());
 
-
             int rowsAffected = preparedStatement.executeUpdate();
 
-            if (rowsAffected > 0) {
-                logger.info("Customer Updated Successfully");
-            } else {
-                logger.warn("Customer with customer_id {}, not found", customer.getCustomerId());
+            if (rowsAffected == 0) {
+                throw new DataAccessException(
+                        "No customer found with customer_id " + customer.getCustomerId() + ", update failed"
+                );
             }
+
+            logger.info("Customer updated successfully: customer_id {}", customer.getCustomerId());
+
         } catch (SQLException e) {
-
-            logger.error("Error updating customer with customer_id {}: {}", customer.getCustomerId(), e.getMessage(), e);
+            throw new DataAccessException(
+                    "Error updating customer with customer_id " + customer.getCustomerId(), e
+            );
         }
-
     }
 
     @Override
     public void deleteCustomer(long id) {
-
         if (id <= 0) {
-            logger.warn("Invalid customer id: {}", id);
-            return;
+            throw new DataAccessException("Invalid customer_id: " + id);
         }
 
         String sql = "DELETE FROM customers WHERE customer_id = ?";
@@ -197,18 +201,17 @@ public class CustomerDAOImpl implements CustomerDAO {
              PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
 
             preparedStatement.setLong(1, id);
-            int rowAffected = preparedStatement.executeUpdate();
+            int rowsAffected = preparedStatement.executeUpdate();
 
-            if (rowAffected > 0) {
-                logger.info("Customer with customer_id {}:  Deleted Successfully", id);
-            } else {
-                logger.warn("Customer with customer_id {}, not found", id);
+            if (rowsAffected == 0) {
+                throw new DataAccessException("No customer found with customer_id " + id + ", delete failed");
             }
+
+            logger.info("Customer deleted successfully: customer_id {}", id);
+
         } catch (SQLException e) {
-            logger.error("Error deleting customer with customer_id {}: {}", id, e.getMessage(), e);
+            throw new DataAccessException("Error deleting customer with customer_id " + id, e);
         }
-
-
     }
 
     @Override
@@ -218,7 +221,7 @@ public class CustomerDAOImpl implements CustomerDAO {
             return Collections.emptyList();
         }
 
-        String sql = "SELECT customer_id, first_name, last_name, dob, email, phone, address,created_at FROM customers where first_name =  LIKE ?";
+        String sql = "SELECT customer_id, first_name, last_name, dob, email, phone, address,created_at FROM customers where first_name  LIKE ?";
         List<Customer> customers = new ArrayList<>();
 
         try (Connection connection = DBConnectionManager.getInstance().getConnection();
