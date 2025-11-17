@@ -1,9 +1,6 @@
 package com.corebank.service;
 
-import com.corebank.exception.DataAccessException;
-import com.corebank.exception.DuplicateUserException;
-import com.corebank.exception.NotFoundException;
-import com.corebank.exception.ValidationException;
+import com.corebank.exception.*;
 import com.corebank.model.User;
 
 import java.util.List;
@@ -15,6 +12,9 @@ public interface UserService {
     User getUserById(long id) throws NotFoundException, DataAccessException, ValidationException;
     User getUserByUsername(String username) throws NotFoundException, DataAccessException, ValidationException;
     List<User> getAllUsers() throws DataAccessException;
-    User updateUser(User user) throws NotFoundException, DataAccessException, ValidationException;
-    void deleteUser(long userId) throws NotFoundException, DataAccessException;
+    User updateUser(User user) throws NotFoundException, DataAccessException, ValidationException,DuplicateUserException;
+    void deleteUser(long userId) throws NotFoundException, DataAccessException, ValidationException, DuplicateUserException;
+    User authenticate(String username, String password) throws AuthenticationException, DataAccessException, ValidationException;
+    void changePassword(long userId, String oldPassword, String newPassword) throws NotFoundException, ValidationException, DataAccessException;
+
 }
